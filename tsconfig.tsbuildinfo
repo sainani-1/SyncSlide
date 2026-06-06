@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/pptx-browser.d.ts","./src/vite-env.d.ts","./src/components/connectdesktop.tsx","./src/components/connectmobile.tsx","./src/components/desktopview.tsx","./src/components/landingscreen.tsx","./src/components/mobileview.tsx","./src/hooks/usewhiteboardsession.ts","./src/lib/slideutils.ts","./src/lib/supabase.ts"],"version":"5.9.3"}
