@@ -3,11 +3,13 @@ import { WhiteboardSession } from '../hooks/useWhiteboardSession'
 
 interface DesktopViewProps {
   session: WhiteboardSession
+  onGoHome: () => void
 }
 
-export function DesktopView({ session }: DesktopViewProps) {
+export function DesktopView({ session, onGoHome }: DesktopViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [showOverlay, setShowOverlay] = useState(true)
+  const [showOverlay, setShowOverlay] = useState(false)
+  const [controlsRevealed, setControlsRevealed] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [connectedPopup, setConnectedPopup] = useState(false)
   const overlayTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
@@ -20,6 +22,13 @@ export function DesktopView({ session }: DesktopViewProps) {
       setConnectedPopup(true)
     }
   }, [session.joinerConnected])
+
+  useEffect(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      setFullscreen(true)
+    }
+  }, [])
 
   const currentSlide = session.slides[session.currentSlideIndex]
   const goPrevSlide = async () => {
@@ -244,23 +253,20 @@ export function DesktopView({ session }: DesktopViewProps) {
       setShowOverlay(true)
       if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
       overlayTimeoutRef.current = setTimeout(() => {
-        if (fullscreen) setShowOverlay(false)
+        setShowOverlay(false)
       }, 3000)
     }
     window.addEventListener('mousemove', handleMouseMove)
     return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [fullscreen])
+  }, [])
 
   const toggleFullscreen = async () => {
     if (!document.fullscreenElement) {
       await document.documentElement.requestFullscreen()
       setFullscreen(true)
-      setShowOverlay(true)
-      setTimeout(() => setShowOverlay(false), 3000)
     } else {
       await document.exitFullscreen()
       setFullscreen(false)
-      setShowOverlay(true)
     }
   }
 
@@ -288,7 +294,86 @@ export function DesktopView({ session }: DesktopViewProps) {
         }}
       />
 
-      {showOverlay && (
+      <div style={{
+        position: 'absolute',
+        bottom: 32,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: 12,
+        opacity: showOverlay ? 1 : 0,
+        transition: 'opacity 0.2s ease',
+        pointerEvents: showOverlay ? 'auto' : 'none',
+      }}>
+        {!controlsRevealed ? (
+          <>
+            <button
+              onClick={() => setControlsRevealed(true)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.85)',
+                fontSize: 11,
+                fontWeight: 500,
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="1 12 9 19 23 5" />
+                </svg>
+                Show
+              </div>
+            </button>
+            <button
+              onClick={onGoHome}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: 11,
+                fontWeight: 500,
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                transition: 'background 0.2s',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
+            >
+              Home
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={() => setControlsRevealed(false)}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(255,255,255,0.08)',
+              color: 'rgba(255,255,255,0.6)',
+              fontSize: 11,
+              fontWeight: 500,
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.08)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 19 15 12 23 5" />
+              </svg>
+              Hide
+            </div>
+          </button>
+        )}
+      </div>
+
+      {controlsRevealed && (
         <div style={{
           position: 'absolute',
           top: 0,
@@ -327,7 +412,7 @@ export function DesktopView({ session }: DesktopViewProps) {
                     : <><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" /></>
                   }
                 </svg>
-                {fullscreen ? 'Exit' : 'Fullscreen'}
+                {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
               </button>
 
               {session.slides.length > 0 && (
@@ -477,7 +562,7 @@ export function DesktopView({ session }: DesktopViewProps) {
                 Delete All
               </button>
               <button
-                onClick={session.disconnect}
+                onClick={onGoHome}
                 style={{
                   padding: '8px 14px',
                   borderRadius: 'var(--radius-sm)',
@@ -488,7 +573,7 @@ export function DesktopView({ session }: DesktopViewProps) {
                   whiteSpace: 'nowrap',
                 }}
               >
-                Disconnect
+                Home
               </button>
             </div>
           </div>

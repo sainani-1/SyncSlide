@@ -26,7 +26,7 @@ export interface StrokeData {
   points: StrokePoint[]
   color: string
   width: number
-  mode?: 'permanent' | 'temp' | 'hold'
+  mode?: 'permanent' | 'temp' | 'hold' | 'highlighter' | 'laser'
 }
 
 export type ConnectionState = 'idle' | 'connecting' | 'connected' | 'error'

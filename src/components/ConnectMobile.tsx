@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent } from 'react'
+import { useState, useRef, useEffect, KeyboardEvent } from 'react'
 
 interface ConnectMobileProps {
   onJoin: (code: string) => void
@@ -54,6 +54,10 @@ export function ConnectMobile({ onJoin, error, connecting }: ConnectMobileProps)
       onJoin(pasted)
     }
   }
+
+  useEffect(() => {
+    inputRefs.current[0]?.focus()
+  }, [])
 
   const fullCode = code.join('')
 

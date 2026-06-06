@@ -2,9 +2,16 @@ import { useRef, useEffect, useState, useCallback } from 'react'
 import { WhiteboardSession, StrokePoint, StrokeData } from '../hooks/useWhiteboardSession'
 
 const COLORS = [
-  '#ef4444', '#f97316', '#eab308', '#22c55e',
-  '#06b6d4', '#6366f1', '#a855f7', '#ec4899',
-  '#ffffff', '#94a3b8', '#1e293b',
+  '#ef4444', '#dc2626', '#b91c1c',
+  '#f97316', '#ea580c',
+  '#eab308', '#ca8a04',
+  '#22c55e', '#16a34a', '#15803d',
+  '#06b6d4', '#0891b2',
+  '#6366f1', '#4f46e5', '#4338ca',
+  '#a855f7', '#9333ea',
+  '#ec4899', '#db2777',
+  '#f43f5e', '#e11d48',
+  '#ffffff', '#f1f5f9', '#94a3b8', '#64748b', '#334155', '#1e293b', '#0f172a',
 ]
 
 const PEN_SIZES = [2, 4, 6, 10, 16]
@@ -18,15 +25,21 @@ export function MobileView({ session }: MobileViewProps) {
   const [color, setColor] = useState('#ef4444')
   const [penSize, setPenSize] = useState(4)
   const [eraserMode, setEraserMode] = useState(false)
+  const [highlighterMode, setHighlighterMode] = useState(false)
+  const [laserMode, setLaserMode] = useState(false)
   const [holdRedActive, setHoldRedActive] = useState(false)
+  const [autoEraseActive, setAutoEraseActive] = useState(false)
+  const autoEraseSecondsRef = useRef(3)
+  const [autoEraseSeconds, setAutoEraseSeconds] = useState(3)
   const [tempStrokes, setTempStrokes] = useState<Map<string, StrokeData>>(new Map())
+  const [fullscreen, setFullscreen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadMessage, setUploadMessage] = useState('')
   const isDrawingRef = useRef(false)
   const strokeIdRef = useRef('')
   const currentPointsRef = useRef<StrokePoint[]>([])
-  const currentStrokeModeRef = useRef<'permanent' | 'temp' | 'hold'>('permanent')
+  const currentStrokeModeRef = useRef<'permanent' | 'temp' | 'hold' | 'highlighter' | 'laser'>('permanent')
   const activeTempStrokeRef = useRef<StrokeData | null>(null)
   const tempStrokeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const holdStrokeIdsRef = useRef<string[]>([])
@@ -287,12 +300,36 @@ export function MobileView({ session }: MobileViewProps) {
     isDrawingRef.current = true
     strokeIdRef.current = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     currentPointsRef.current = [{ x: coords.x, y: coords.y }]
-    currentStrokeModeRef.current = color === '#22c55e' ? 'temp' : holdRedActive ? 'hold' : 'permanent'
+    currentStrokeModeRef.current = highlighterMode
+      ? 'highlighter'
+      : laserMode
+        ? 'laser'
+        : autoEraseActive
+          ? 'temp'
+          : color === '#22c55e'
+            ? 'temp'
+            : holdRedActive
+              ? 'hold'
+              : 'permanent'
 
     canvas.setPointerCapture(e.pointerId)
 
-    ctx.strokeStyle = color === '#22c55e' ? '#22c55e' : holdRedActive ? '#ef4444' : color
-    ctx.lineWidth = (penSize * Math.min(canvas.width, canvas.height)) / 500
+    const strokeColor = highlighterMode
+      ? 'rgba(255, 238, 88, 0.45)'
+      : laserMode
+        ? 'rgba(255, 60, 60, 0.85)'
+        : color === '#22c55e'
+          ? '#22c55e'
+          : holdRedActive
+            ? '#ef4444'
+            : color
+
+    ctx.strokeStyle = strokeColor
+    ctx.lineWidth = highlighterMode
+      ? (20 * Math.min(canvas.width, canvas.height)) / 500
+      : laserMode
+        ? (6 * Math.min(canvas.width, canvas.height)) / 500
+        : (penSize * Math.min(canvas.width, canvas.height)) / 500
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
@@ -302,26 +339,28 @@ export function MobileView({ session }: MobileViewProps) {
       syncTempStroke({
         strokeId: strokeIdRef.current,
         points: [{ x: coords.x, y: coords.y }],
-        color: ctx.strokeStyle,
-        width: penSize,
+        color: strokeColor,
+        width: highlighterMode ? 20 : laserMode ? 6 : penSize,
         mode: currentStrokeModeRef.current,
       })
     }
+
+    const modeTtlMs = highlighterMode ? 5000 : laserMode ? 1500 : autoEraseActive ? autoEraseSeconds * 1000 : 3000
 
     session.sendStrokePoint(
       strokeIdRef.current,
       coords.x,
       coords.y,
-      ctx.strokeStyle,
-      penSize,
+      strokeColor,
+      highlighterMode ? 20 : laserMode ? 6 : penSize,
       'start',
-      currentStrokeModeRef.current === 'temp'
-        ? { mode: 'temp', ttlMs: 3000 }
+      currentStrokeModeRef.current === 'temp' || currentStrokeModeRef.current === 'highlighter' || currentStrokeModeRef.current === 'laser'
+        ? { mode: 'temp', ttlMs: modeTtlMs }
         : currentStrokeModeRef.current === 'hold'
           ? { mode: 'hold' }
           : { mode: 'permanent' }
     )
-  }, [color, penSize, getCanvasCoords, session, eraserMode, holdRedActive, syncTempStroke])
+  }, [color, penSize, getCanvasCoords, session, eraserMode, holdRedActive, syncTempStroke, highlighterMode, laserMode])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDrawingRef.current) return
@@ -349,20 +388,32 @@ export function MobileView({ session }: MobileViewProps) {
       }
     }
 
+    const strokeColor = highlighterMode
+      ? 'rgba(255, 238, 88, 0.45)'
+      : laserMode
+        ? 'rgba(255, 60, 60, 0.85)'
+        : color === '#22c55e'
+          ? '#22c55e'
+          : holdRedActive
+            ? '#ef4444'
+            : color
+
+    const modeTtlMs = highlighterMode ? 5000 : laserMode ? 1500 : autoEraseActive ? autoEraseSeconds * 1000 : 3000
+
     session.sendStrokePoint(
       strokeIdRef.current,
       coords.x,
       coords.y,
-      color === '#22c55e' ? '#22c55e' : holdRedActive ? '#ef4444' : color,
-      penSize,
+      strokeColor,
+      highlighterMode ? 20 : laserMode ? 6 : penSize,
       'move',
-      currentStrokeModeRef.current === 'temp'
-        ? { mode: 'temp', ttlMs: 3000 }
+      currentStrokeModeRef.current === 'temp' || currentStrokeModeRef.current === 'highlighter' || currentStrokeModeRef.current === 'laser'
+        ? { mode: 'temp', ttlMs: modeTtlMs }
         : currentStrokeModeRef.current === 'hold'
           ? { mode: 'hold' }
           : { mode: 'permanent' }
     )
-  }, [getCanvasCoords, session, color, penSize, holdRedActive, syncTempStroke])
+  }, [getCanvasCoords, session, color, penSize, holdRedActive, syncTempStroke, highlighterMode, laserMode, autoEraseActive, autoEraseSeconds])
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!isDrawingRef.current) return
@@ -370,17 +421,28 @@ export function MobileView({ session }: MobileViewProps) {
     isDrawingRef.current = false
 
     const coords = getCanvasCoords(e.clientX, e.clientY)
+    const strokeColor = highlighterMode
+      ? 'rgba(255, 238, 88, 0.45)'
+      : laserMode
+        ? 'rgba(255, 60, 60, 0.85)'
+        : color === '#22c55e'
+          ? '#22c55e'
+          : holdRedActive
+            ? '#ef4444'
+            : color
+    const modeTtlMs = highlighterMode ? 5000 : laserMode ? 1500 : autoEraseActive ? autoEraseSeconds * 1000 : 3000
+
     if (coords.x >= 0 && coords.x <= 1 && coords.y >= 0 && coords.y <= 1) {
       currentPointsRef.current.push({ x: coords.x, y: coords.y })
       session.sendStrokePoint(
         strokeIdRef.current,
         coords.x,
         coords.y,
-        color === '#22c55e' ? '#22c55e' : holdRedActive ? '#ef4444' : color,
-        penSize,
+        strokeColor,
+        highlighterMode ? 20 : laserMode ? 6 : penSize,
         'end',
-        currentStrokeModeRef.current === 'temp'
-          ? { mode: 'temp', ttlMs: 3000 }
+        currentStrokeModeRef.current === 'temp' || currentStrokeModeRef.current === 'highlighter' || currentStrokeModeRef.current === 'laser'
+          ? { mode: 'temp', ttlMs: modeTtlMs }
           : currentStrokeModeRef.current === 'hold'
             ? { mode: 'hold' }
             : { mode: 'permanent' }
@@ -392,22 +454,22 @@ export function MobileView({ session }: MobileViewProps) {
       const stroke: StrokeData = {
         strokeId: strokeIdRef.current,
         points,
-        color: color === '#22c55e' ? '#22c55e' : holdRedActive ? '#ef4444' : color,
-        width: penSize,
+        color: strokeColor,
+        width: highlighterMode ? 20 : laserMode ? 6 : penSize,
         mode: currentStrokeModeRef.current,
       }
 
       if (currentStrokeModeRef.current === 'permanent') {
         session.saveStroke(stroke)
-      } else if (currentStrokeModeRef.current === 'temp') {
+      } else if (currentStrokeModeRef.current === 'temp' || currentStrokeModeRef.current === 'highlighter' || currentStrokeModeRef.current === 'laser') {
         syncTempStroke(stroke)
-        finalizeTempStroke(stroke.strokeId, 3000)
+        finalizeTempStroke(stroke.strokeId, modeTtlMs)
       } else if (currentStrokeModeRef.current === 'hold') {
         syncTempStroke(stroke)
         holdStrokeIdsRef.current.push(stroke.strokeId)
       }
     }
-  }, [getCanvasCoords, session, color, penSize, holdRedActive, syncTempStroke, finalizeTempStroke])
+  }, [getCanvasCoords, session, color, penSize, holdRedActive, syncTempStroke, finalizeTempStroke, highlighterMode, laserMode, autoEraseActive, autoEraseSeconds])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -453,6 +515,22 @@ export function MobileView({ session }: MobileViewProps) {
     e.target.value = ''
   }
 
+  const toggleFullscreen = useCallback(async () => {
+    if (!document.fullscreenElement) {
+      await document.documentElement.requestFullscreen()
+      setFullscreen(true)
+    } else {
+      await document.exitFullscreen()
+      setFullscreen(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleFSChange = () => setFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handleFSChange)
+    return () => document.removeEventListener('fullscreenchange', handleFSChange)
+  }, [])
+
   const handleSave = async () => {
     const dataUrl = await session.saveCanvasImage()
     if (!dataUrl) return
@@ -465,6 +543,9 @@ export function MobileView({ session }: MobileViewProps) {
   const activateHoldRed = () => {
     setHoldRedActive(true)
     setEraserMode(false)
+    setHighlighterMode(false)
+    setLaserMode(false)
+    setAutoEraseActive(false)
     setColor('#ef4444')
   }
 
@@ -483,6 +564,9 @@ export function MobileView({ session }: MobileViewProps) {
 
   const handleClearAll = async () => {
     setHoldRedActive(false)
+    setHighlighterMode(false)
+    setLaserMode(false)
+    setAutoEraseActive(false)
     holdStrokeIdsRef.current = []
     activeTempStrokeRef.current = null
 
@@ -585,19 +669,43 @@ export function MobileView({ session }: MobileViewProps) {
             {session.sessionCode}
           </span>
         </div>
-        <button
-          onClick={session.disconnect}
-          style={{
-            padding: '6px 12px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'rgba(239,68,68,0.15)',
-            color: 'var(--danger)',
-            fontSize: 12,
-            fontWeight: 500,
-          }}
-        >
-          Disconnect
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <button
+            onClick={toggleFullscreen}
+            style={{
+              padding: '6px 10px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(255,255,255,0.06)',
+              color: 'var(--text-secondary)',
+              fontSize: 12,
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {fullscreen
+                ? <><rect x="8" y="2" width="8" height="4" /><rect x="2" y="8" width="4" height="8" /><rect x="8" y="18" width="8" height="4" /><rect x="18" y="8" width="4" height="8" /></>
+                : <><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" /></>
+              }
+            </svg>
+            {fullscreen ? 'Exit FS' : 'Fullscreen'}
+          </button>
+          <button
+            onClick={session.disconnect}
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'rgba(239,68,68,0.15)',
+              color: 'var(--danger)',
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            Disconnect
+          </button>
+        </div>
       </div>
 
       <div
@@ -649,6 +757,9 @@ export function MobileView({ session }: MobileViewProps) {
               onClick={() => {
                 setColor(c)
                 setEraserMode(false)
+                setHighlighterMode(false)
+                setLaserMode(false)
+                setAutoEraseActive(false)
                 if (c !== '#ef4444') {
                   setHoldRedActive(false)
                   holdStrokeIdsRef.current = []
@@ -672,10 +783,47 @@ export function MobileView({ session }: MobileViewProps) {
               }}
             />
           ))}
+          <label style={{
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            border: '2px dashed var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            cursor: 'pointer',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <input
+              type="color"
+              value={color}
+              onChange={(e) => {
+                setColor(e.target.value)
+                setEraserMode(false)
+                setHighlighterMode(false)
+                setLaserMode(false)
+                setHoldRedActive(false)
+                holdStrokeIdsRef.current = []
+              }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: 0,
+                cursor: 'pointer',
+                width: '100%',
+                height: '100%',
+              }}
+            />
+          </label>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
             {PEN_SIZES.map((s) => (
               <button
                 key={s}
@@ -702,7 +850,7 @@ export function MobileView({ session }: MobileViewProps) {
             ))}
           </div>
 
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
             <button
               onClick={() => void goPrevSlide()}
               disabled={session.currentSlideIndex <= 0}
@@ -788,7 +936,84 @@ export function MobileView({ session }: MobileViewProps) {
             </button>
 
             <button
-              onClick={() => setEraserMode((p) => !p)}
+              onClick={() => {
+                setHighlighterMode((p) => !p)
+                if (!highlighterMode) { setEraserMode(false); setLaserMode(false); setAutoEraseActive(false) }
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: highlighterMode ? 'rgba(255,238,88,0.25)' : 'rgba(255,238,88,0.06)',
+                color: highlighterMode ? '#ffe658' : '#b5a84e',
+                fontSize: 11,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                border: highlighterMode ? '1px solid rgba(255,238,88,0.5)' : '1px solid transparent',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+              Highlight
+            </button>
+
+            <button
+              onClick={() => {
+                setLaserMode((p) => !p)
+                if (!laserMode) { setEraserMode(false); setHighlighterMode(false); setAutoEraseActive(false) }
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: laserMode ? 'rgba(255,60,60,0.25)' : 'rgba(255,60,60,0.06)',
+                color: laserMode ? '#ff6b6b' : '#b54545',
+                fontSize: 11,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                border: laserMode ? '1px solid rgba(255,60,60,0.5)' : '1px solid transparent',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="2" /><path d="M12 3v2m0 14v2m9-9h-2M5 12H3m15.07-6.07l-1.41 1.41M7.34 16.66l-1.41 1.41M19.07 19.07l-1.41-1.41M7.34 7.34L5.93 5.93" />
+              </svg>
+              Laser
+            </button>
+
+            <button
+              onClick={() => {
+                setAutoEraseActive((p) => {
+                  if (!p) { setHighlighterMode(false); setLaserMode(false); setEraserMode(false) }
+                  return !p
+                })
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: autoEraseActive ? 'rgba(148,163,184,0.25)' : 'rgba(148,163,184,0.06)',
+                color: autoEraseActive ? '#cbd5e1' : '#64748b',
+                fontSize: 11,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                border: autoEraseActive ? '1px solid rgba(148,163,184,0.5)' : '1px solid transparent',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+              </svg>
+              {autoEraseActive ? `${autoEraseSeconds}s` : 'Auto'}
+            </button>
+
+            <button
+              onClick={() => {
+                setEraserMode((p) => !p)
+                if (!eraserMode) { setHighlighterMode(false); setLaserMode(false); setAutoEraseActive(false) }
+              }}
               style={{
                 padding: '8px 10px',
                 borderRadius: 'var(--radius-sm)',
@@ -898,6 +1123,7 @@ export function MobileView({ session }: MobileViewProps) {
               alignItems: 'center',
               gap: 4,
               cursor: 'pointer',
+              flexShrink: 0,
             }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
@@ -913,6 +1139,41 @@ export function MobileView({ session }: MobileViewProps) {
             </label>
           </div>
         </div>
+
+        {autoEraseActive && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+              Fade after
+            </span>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={autoEraseSeconds}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                setAutoEraseSeconds(val)
+                autoEraseSecondsRef.current = val
+              }}
+              style={{
+                flex: 1,
+                height: 3,
+                borderRadius: 2,
+                appearance: 'none',
+                background: `linear-gradient(90deg, var(--accent) ${((autoEraseSeconds - 1) / 9) * 100}%, var(--border) ${((autoEraseSeconds - 1) / 9) * 100}%)`,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            />
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', minWidth: 28, textAlign: 'right', fontFamily: "'Courier New', monospace" }}>
+              {autoEraseSeconds}s
+            </span>
+          </div>
+        )}
 
         {session.slides.length > 1 && (
           <div style={{
@@ -947,6 +1208,35 @@ export function MobileView({ session }: MobileViewProps) {
                 />
               </button>
             ))}
+          </div>
+        )}
+
+        {session.slides.length > 0 && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '2px 0',
+          }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', minWidth: 32, textAlign: 'center' }}>
+              {session.currentSlideIndex + 1}/{session.slides.length}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(0, session.slides.length - 1)}
+              value={session.currentSlideIndex}
+              onChange={(e) => session.changeSlide(Number(e.target.value))}
+              style={{
+                flex: 1,
+                height: 4,
+                borderRadius: 2,
+                appearance: 'none',
+                background: `linear-gradient(90deg, var(--accent) ${(session.currentSlideIndex / Math.max(1, session.slides.length - 1)) * 100}%, var(--border) ${(session.currentSlideIndex / Math.max(1, session.slides.length - 1)) * 100}%)`,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            />
           </div>
         )}
 
