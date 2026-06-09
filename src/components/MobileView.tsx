@@ -106,9 +106,12 @@ export function MobileView({ session }: MobileViewProps) {
     const dims = getCanvasDims()
     if (!canvas || !dims) return null
     const { w, h } = dims
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w
-      canvas.height = h
+    const dpr = window.devicePixelRatio || 1
+    const bw = Math.round(w * dpr)
+    const bh = Math.round(h * dpr)
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw
+      canvas.height = bh
       canvas.style.width = `${w}px`
       canvas.style.height = `${h}px`
     }
@@ -122,6 +125,10 @@ export function MobileView({ session }: MobileViewProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { w, h } = dims
+    const dpr = window.devicePixelRatio || 1
+
+    ctx.save()
+    ctx.scale(dpr, dpr)
 
     ctx.clearRect(0, 0, w, h)
 
@@ -149,6 +156,8 @@ export function MobileView({ session }: MobileViewProps) {
         ctx.fillText('Upload a slide to begin', w / 2, h / 2)
       }
     }
+
+    ctx.restore()
   }, [currentSlide, initCanvasSize, loadSlideImage, session.slides.length, tempStrokes, session.strokes])
 
   function drawAllStrokes(ctx: CanvasRenderingContext2D, w: number, h: number) {
@@ -324,16 +333,25 @@ export function MobileView({ session }: MobileViewProps) {
             ? '#ef4444'
             : color
 
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.width / dpr
+    const cssH = canvas.height / dpr
+
+    ctx.save()
+    ctx.scale(dpr, dpr)
+
     ctx.strokeStyle = strokeColor
     ctx.lineWidth = highlighterMode
-      ? (20 * Math.min(canvas.width, canvas.height)) / 500
+      ? (20 * Math.min(cssW, cssH)) / 500
       : laserMode
-        ? (6 * Math.min(canvas.width, canvas.height)) / 500
-        : (penSize * Math.min(canvas.width, canvas.height)) / 500
+        ? (6 * Math.min(cssW, cssH)) / 500
+        : (penSize * Math.min(cssW, cssH)) / 500
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
-    ctx.moveTo(coords.x * canvas.width, coords.y * canvas.height)
+    ctx.moveTo(coords.x * cssW, coords.y * cssH)
+
+    ctx.restore()
 
     if (currentStrokeModeRef.current !== 'permanent') {
       syncTempStroke({
@@ -375,8 +393,15 @@ export function MobileView({ session }: MobileViewProps) {
 
     currentPointsRef.current.push({ x: coords.x, y: coords.y })
 
-    ctx.lineTo(coords.x * canvas.width, coords.y * canvas.height)
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.width / dpr
+    const cssH = canvas.height / dpr
+
+    ctx.save()
+    ctx.scale(dpr, dpr)
+    ctx.lineTo(coords.x * cssW, coords.y * cssH)
     ctx.stroke()
+    ctx.restore()
 
     if (currentStrokeModeRef.current !== 'permanent') {
       const existing = activeTempStrokeRef.current
@@ -1110,6 +1135,33 @@ export function MobileView({ session }: MobileViewProps) {
                 <path d="M3 6h18" /><path d="M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2" /><path d="M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14" /><path d="M10 11v6" /><path d="M14 11v6" />
               </svg>
               Delete All
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  await session.createBlankSlide()
+                } catch (err: any) {
+                  alert('Failed to create blank slide: ' + (err.message || ''))
+                }
+              }}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+                fontSize: 11,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              </svg>
+              Blank Page
             </button>
 
             <label style={{

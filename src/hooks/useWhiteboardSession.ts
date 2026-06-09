@@ -60,6 +60,7 @@ export interface WhiteboardSession {
   uploadSlide: (file: File, onProgress?: (progress: number, message: string) => void) => Promise<Slide[]>
   deleteSlide: (slideId: string) => Promise<void>
   saveCanvasImage: () => Promise<string | null>
+  createBlankSlide: () => Promise<void>
   disconnect: () => void
   setDrawPointCallback: (cb: ((payload: {
     strokeId: string
@@ -960,6 +961,59 @@ export function useWhiteboardSession(): WhiteboardSession {
     }
   }, [loadStrokesForSlide, sessionId])
 
+  const createBlankSlide = useCallback(async () => {
+    if (!sessionId) return
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 1920
+    canvas.height = 1080
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 1920, 1080)
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b)
+        else reject(new Error('Failed to create blank slide'))
+      }, 'image/png')
+    })
+
+    const url = await uploadSlideImage(blob, sessionId, slidesRef.current.length, 'Blank Page')
+
+    const { data: slide, error: fnError } = await supabase.rpc('insert_slide', {
+      p_session_id: sessionId,
+      p_url: url,
+      p_name: 'Blank Page',
+      p_slide_order: slidesRef.current.length,
+    })
+
+    if (fnError) throw new Error(`Database error: ${fnError.message}`)
+    if (!slide || slide.length === 0) throw new Error('Slide inserted but no data returned.')
+
+    const insertedSlide = slide[0] as Slide
+    const newSlides = [...slidesRef.current, insertedSlide]
+
+    setSlides(newSlides)
+    slidesRef.current = newSlides
+    setCurrentSlideIndex(newSlides.length - 1)
+    currentSlideIndexRef.current = newSlides.length - 1
+
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'slides_updated',
+      payload: { changedAt: Date.now() },
+    })
+    channelRef.current?.send({
+      type: 'broadcast',
+      event: 'slide_changed',
+      payload: { index: newSlides.length - 1 },
+    })
+
+    if (sessionId) loadStrokesForSlide(sessionId, newSlides.length - 1)
+  }, [sessionId, loadStrokesForSlide])
+
   const saveCanvasImage = useCallback(async () => {
     const canvas = document.querySelector('canvas.main-canvas')
     if (!canvas) return null
@@ -1022,6 +1076,7 @@ export function useWhiteboardSession(): WhiteboardSession {
     uploadSlide,
     deleteSlide,
     saveCanvasImage,
+    createBlankSlide,
     disconnect,
     setDrawPointCallback,
   }

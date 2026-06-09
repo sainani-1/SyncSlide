@@ -16,6 +16,8 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
   const slideImageRef = useRef<HTMLImageElement | null>(null)
   const slideUrlRef = useRef('')
   const activeStrokesRef = useRef<Map<string, { strokeId: string; color: string; width: number }>>(new Map())
+  const sessionRef = useRef(session)
+  sessionRef.current = session
 
   useEffect(() => {
     if (session.joinerConnected) {
@@ -46,7 +48,18 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
     const parent = canvas.parentElement
     if (!parent) return null
     const rect = parent.getBoundingClientRect()
-    return { w: rect.width, h: rect.height }
+    const aspect = 16 / 9
+    let w: number, h: number
+    const maxW = rect.width
+    const maxH = rect.height
+    if (maxW / maxH > aspect) {
+      h = maxH
+      w = h * aspect
+    } else {
+      w = maxW
+      h = w / aspect
+    }
+    return { w: Math.floor(w), h: Math.floor(h) }
   }, [])
 
   const initCanvasSize = useCallback(() => {
@@ -54,9 +67,14 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
     const dims = getCanvasDims()
     if (!canvas || !dims) return
     const { w, h } = dims
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w
-      canvas.height = h
+    const dpr = window.devicePixelRatio || 1
+    const bw = Math.round(w * dpr)
+    const bh = Math.round(h * dpr)
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw
+      canvas.height = bh
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
     }
     return dims
   }, [getCanvasDims])
@@ -65,21 +83,7 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
     ctx.fillStyle = '#1a1a2e'
     ctx.fillRect(0, 0, w, h)
     if (img) {
-      const imgRatio = img.width / img.height
-      const canvasRatio = w / h
-      let drawW: number, drawH: number, dx: number, dy: number
-      if (imgRatio > canvasRatio) {
-        drawW = w
-        drawH = w / imgRatio
-        dx = 0
-        dy = (h - drawH) / 2
-      } else {
-        drawH = h
-        drawW = h * imgRatio
-        dx = (w - drawW) / 2
-        dy = 0
-      }
-      ctx.drawImage(img, dx, dy, drawW, drawH)
+      ctx.drawImage(img, 0, 0, w, h)
     }
   }, [])
 
@@ -129,16 +133,18 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const { w, h } = dims
+    const dpr = window.devicePixelRatio || 1
 
     activeStrokesRef.current.clear()
+
+    ctx.save()
+    ctx.scale(dpr, dpr)
     ctx.clearRect(0, 0, w, h)
 
     if (currentSlide) {
       const img = await loadSlideImage(currentSlide.url)
       drawSlideBackground(ctx, w, h, img)
-      ctx.save()
       drawAllStrokes(ctx, w, h)
-      ctx.restore()
     } else {
       ctx.fillStyle = '#1a1a2e'
       ctx.fillRect(0, 0, w, h)
@@ -155,10 +161,15 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
       }
     }
 
+    ctx.restore()
+
     if (currentSlide && !slideImageRef.current) {
+      ctx.save()
+      ctx.scale(dpr, dpr)
       drawPlaceholder(ctx, w, h, currentSlide.name)
+      ctx.restore()
     }
-  }, [currentSlide, drawAllStrokes, drawSlideBackground, initCanvasSize, loadSlideImage, session.slides.length])
+  }, [currentSlide, drawAllStrokes, drawSlideBackground, initCanvasSize, loadSlideImage, session.slides.length, session.strokes])
 
   const drawPointDirectly = useCallback((payload: {
     strokeId: string
@@ -169,13 +180,17 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
     type: 'start' | 'move' | 'end'
   }) => {
     const canvas = canvasRef.current
-    const dims = getCanvasDims()
-    if (!canvas || !dims) return
+    if (!canvas) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
-    const { w, h } = dims
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.width / dpr
+    const cssH = canvas.height / dpr
 
-    const strokeWidth = (payload.width * Math.min(w, h)) / 500
+    const strokeWidth = (payload.width * Math.min(cssW, cssH)) / 500
+
+    ctx.save()
+    ctx.scale(dpr, dpr)
 
     if (payload.type === 'start') {
       ctx.beginPath()
@@ -183,7 +198,7 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
       ctx.lineWidth = strokeWidth
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
-      ctx.moveTo(payload.x * w, payload.y * h)
+      ctx.moveTo(payload.x * cssW, payload.y * cssH)
       activeStrokesRef.current.set(payload.strokeId, {
         strokeId: payload.strokeId,
         color: payload.color,
@@ -196,20 +211,22 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
         ctx.lineWidth = strokeWidth
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
-        ctx.moveTo(payload.x * w, payload.y * h)
+        ctx.moveTo(payload.x * cssW, payload.y * cssH)
         activeStrokesRef.current.set(payload.strokeId, {
           strokeId: payload.strokeId,
           color: payload.color,
           width: payload.width,
         })
       }
-      ctx.lineTo(payload.x * w, payload.y * h)
+      ctx.lineTo(payload.x * cssW, payload.y * cssH)
       ctx.stroke()
       if (payload.type === 'end') {
         activeStrokesRef.current.delete(payload.strokeId)
       }
     }
-  }, [getCanvasDims])
+
+    ctx.restore()
+  }, [])
 
   useEffect(() => {
     session.setDrawPointCallback(drawPointDirectly)
@@ -249,6 +266,21 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
   }, [fullRender])
 
   useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const s = sessionRef.current
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        if (s.currentSlideIndex > 0) s.changeSlide(s.currentSlideIndex - 1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (s.currentSlideIndex < s.slides.length - 1) s.changeSlide(s.currentSlideIndex + 1)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  useEffect(() => {
     const handleMouseMove = () => {
       setShowOverlay(true)
       if (overlayTimeoutRef.current) clearTimeout(overlayTimeoutRef.current)
@@ -283,14 +315,15 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
       position: 'relative',
       background: '#000',
       overflow: 'hidden',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
     }}>
       <canvas
         ref={canvasRef}
         className="main-canvas"
         style={{
           display: 'block',
-          width: '100%',
-          height: '100%',
         }}
       />
 
@@ -560,6 +593,32 @@ export function DesktopView({ session, onGoHome }: DesktopViewProps) {
                 }}
               >
                 Delete All
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    await session.createBlankSlide()
+                  } catch (err: any) {
+                    alert('Failed to create blank slide: ' + (err.message || ''))
+                  }
+                }}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'white',
+                  fontSize: 13,
+                  backdropFilter: 'blur(10px)',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                </svg>
+                Blank Page
               </button>
               <button
                 onClick={onGoHome}
