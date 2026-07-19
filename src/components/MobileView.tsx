@@ -45,7 +45,6 @@ export function MobileView({ session }: MobileViewProps) {
   const holdStrokeIdsRef = useRef<string[]>([])
   const renderSequenceRef = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
-  const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null)
   const slideImageRef = useRef<HTMLImageElement | null>(null)
   const slideUrlRef = useRef('')
   const currentSlide = session.slides[session.currentSlideIndex]
@@ -631,35 +630,6 @@ export function MobileView({ session }: MobileViewProps) {
     await session.changeSlide(session.currentSlideIndex + 1)
   }
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length !== 1) return
-    const touch = e.touches[0]
-    swipeStartRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      time: Date.now(),
-    }
-  }
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const start = swipeStartRef.current
-    swipeStartRef.current = null
-    if (!start) return
-    const touch = e.changedTouches[0]
-    if (!touch) return
-
-    const dx = touch.clientX - start.x
-    const dy = touch.clientY - start.y
-    const dt = Date.now() - start.time
-    const horizontal = Math.abs(dx)
-    const vertical = Math.abs(dy)
-
-    if (dt < 700 && horizontal > 70 && vertical < 50) {
-      if (dx < 0) void goNextSlide()
-      else void goPrevSlide()
-    }
-  }
-
   return (
     <div style={{
       height: '100%',
@@ -735,8 +705,6 @@ export function MobileView({ session }: MobileViewProps) {
 
       <div
         ref={containerRef}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
         style={{
           flex: 1,
           display: 'flex',
