@@ -723,6 +723,7 @@ export function MobileView({ session }: MobileViewProps) {
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
+          onClick={(e) => e.preventDefault()}
           style={{
             display: 'block',
             borderRadius: 4,
@@ -742,6 +743,7 @@ export function MobileView({ session }: MobileViewProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
+        touchAction: 'none',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
           {COLORS.map((c) => (
@@ -1195,12 +1197,13 @@ export function MobileView({ session }: MobileViewProps) {
           </div>
         )}
 
-        {session.slides.length > 1 && (
+          {session.slides.length > 1 && (
           <div style={{
             display: 'flex',
             gap: 4,
             overflowX: 'auto',
             paddingBottom: 2,
+            touchAction: 'none',
           }}>
             {session.slides.map((slide, i) => (
               <button
